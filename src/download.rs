@@ -133,7 +133,7 @@ fn generate_bar(progress: f64, width: usize) -> String {
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss
 )]
-fn progress_line(desc: &str, downloaded: u64, total_size: u64, elapsed: f64) -> String {
+fn progress_line(downloaded: u64, total_size: u64, elapsed: f64) -> String {
     let rate = if elapsed > 0.0 {
         downloaded as f64 / elapsed
     } else {
@@ -143,11 +143,11 @@ fn progress_line(desc: &str, downloaded: u64, total_size: u64, elapsed: f64) -> 
     let speed = format_bytes(rate);
     let time = format_time(elapsed);
     if total_size == 0 {
-        return format!("{desc}: {done} {speed}/s {time}");
+        return format!("  {done} {speed}/s {time}");
     }
     let progress = (downloaded as f64 / total_size as f64).min(1.0);
     format!(
-        "{desc}: {}% {} {done}/{} {speed}/s {time}",
+        "  {:>3}% {} {done}/{} {speed}/s {time}",
         (progress * 100.0) as u8,
         generate_bar(progress, BAR_WIDTH),
         format_bytes(total_size as f64),
@@ -221,7 +221,7 @@ fn download_file(url: &str, dest: &Path) -> Result<()> {
 
             let mut downloaded: u64 = 0;
             let start_time = Instant::now();
-            let desc: String = format!("Downloading {url} to '{}'", dest.display());
+            eprintln!("Downloading {url} to '{}'", dest.display());
             let stream_result: std::result::Result<(), (InferenceError, bool)> = {
                 let mut writer = BufWriter::new(File::create(&temp_path).map_err(|e| {
                     (
@@ -266,10 +266,7 @@ fn download_file(url: &str, dest: &Path) -> Result<()> {
                         last_update = now;
 
                         let elapsed = start_time.elapsed().as_secs_f64();
-                        eprint!(
-                            "\r\x1b[K{}",
-                            progress_line(&desc, downloaded, total_size, elapsed)
-                        );
+                        eprint!("\r\x1b[K{}", progress_line(downloaded, total_size, elapsed));
                         std::io::stderr().flush().ok();
                     }
                     writer.flush().map_err(|e| {
@@ -291,10 +288,7 @@ fn download_file(url: &str, dest: &Path) -> Result<()> {
             stream_result?;
 
             let elapsed = start_time.elapsed().as_secs_f64();
-            eprintln!(
-                "\r\x1b[K{}",
-                progress_line(&desc, downloaded, total_size, elapsed)
-            );
+            eprintln!("\r\x1b[K{}", progress_line(downloaded, total_size, elapsed));
 
             if let Err(e) = fs::rename(&temp_path, dest) {
                 let _ = fs::remove_file(&temp_path);
@@ -460,6 +454,8 @@ mod tests {
     fn test_format_time() {
         assert_eq!(format_time(5.5), "5.5s");
         assert_eq!(format_time(65.0), "1:05.0");
+        // >= 3600s switches to the H:MM:SS.s layout.
+        assert!(format_time(3661.5).starts_with("1:01:"));
     }
 
     #[test]
@@ -467,19 +463,28 @@ mod tests {
         assert_eq!(generate_bar(0.0, 10), "──────────");
         assert_eq!(generate_bar(1.0, 10), "━━━━━━━━━━");
         assert_eq!(generate_bar(0.5, 10), "━━━━━─────");
-    }
-
-    #[test]
-    fn test_format_time_hours_branch() {
-        // >= 3600s uses the H:MM:SS.s layout.
-        let s = format_time(3661.5);
-        assert!(s.starts_with("1:01:"), "got {s}");
-    }
-
-    #[test]
-    fn test_generate_bar_clamps_overshoot() {
         // progress > 1.0 never exceeds the bar width.
         assert_eq!(generate_bar(2.0, 6), "━━━━━━");
+    }
+
+    #[test]
+    fn test_progress_line() {
+        // With content-length: percentage, bar, transferred/total, and rate.
+        let line = progress_line(5 * 1_048_576, 10 * 1_048_576, 2.0);
+        assert!(line.contains(" 50% "), "{line}");
+        assert!(line.contains("5.0MB/10.0MB"), "{line}");
+        assert!(line.contains("2.5MB/s"), "{line}");
+        assert!(line.contains('━') && line.contains('─'), "{line}");
+
+        // A server that sent no content-length drops the percentage and the bar.
+        let line = progress_line(1024, 0, 1.0);
+        assert!(!line.contains('%'), "{line}");
+        assert!(!line.contains('━') && !line.contains('─'), "{line}");
+        assert_eq!(line.trim(), "1.0KB 1.0KB/s 1.0s");
+
+        // Zero elapsed must not divide by zero, and an overshooting server clamps at 100%.
+        assert!(progress_line(1024, 0, 0.0).contains("0B/s"), "zero elapsed");
+        assert!(progress_line(20, 10, 1.0).contains("100%"), "overshoot");
     }
 
     #[test]
