@@ -149,18 +149,16 @@ export interface LoadOptions {
 }
 
 /**
- * Resolve the device string passed to wasm. An explicit choice is honored;
- * `"auto"` feature-detects a WebGPU adapter and otherwise falls back to CPU.
+ * Resolve the device string passed to wasm. `"cpu"` is honored as-is; anything else
+ * needs a real adapter, since `navigator.gpu` can exist while `requestAdapter()`
+ * still returns `null` — so `YOLO.device` reports what actually ran.
  */
 async function resolveDevice(pref?: "auto" | "webgpu" | "cpu"): Promise<string> {
-  if (pref === "cpu" || pref === "webgpu") return pref;
+  if (pref === "cpu") return "cpu";
   const gpu = (navigator as { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
-  if (!gpu) return "cpu";
-  try {
-    return (await gpu.requestAdapter()) ? "webgpu" : "cpu";
-  } catch {
-    return "cpu";
-  }
+  if (await gpu?.requestAdapter().catch(() => null)) return "webgpu";
+  if (pref === "webgpu") console.warn("[@ultralytics/yolo] WebGPU requested but no adapter found; running on CPU.");
+  return "cpu";
 }
 
 /** Ultralytics model assets release (ONNX exports of yolo26 / yolo11 / yolov8). */
