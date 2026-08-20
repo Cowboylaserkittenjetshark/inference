@@ -49,7 +49,7 @@ macro_rules! bind_compute_stream {
     ($ep:expr, $compute_stream:expr) => {
         match $compute_stream {
             Some(s) => unsafe { $ep.with_compute_stream(s).build().error_on_failure() },
-            None => $ep.build(),
+            None => $ep.build().error_on_failure(),
         }
     };
 }

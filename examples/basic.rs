@@ -9,14 +9,21 @@
 //! cargo run --example basic -- path/to/image.jpg
 //! ```
 
-use ultralytics_inference::YOLOModel;
+// use ultralytics_inference::YOLOModel;
+use ultralytics_inference::{Device, InferenceConfig, YOLOModel};
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load the model. A known Ultralytics YOLO26 name is auto-downloaded if the
     // file is not already on disk; model metadata (classes, task, image size) is
     // read automatically from the ONNX file.
-    let mut model = YOLOModel::load("yolo26n.onnx")?;
+    // let mut model = YOLOModel::load("yolo26n.onnx")?;
+    let cfg = InferenceConfig::new()
+        .with_device(Device::TensorRt(0))
+        .with_half(true);
+    // dbg!(&cfg);
+    let mut model = YOLOModel::load_with_config("yolo26n.onnx", cfg)?;
+    // dbg!(model.metadata());
 
     // Predict on the image path passed as the first argument, or fall back to an
     // auto-downloaded sample image when none is given.
